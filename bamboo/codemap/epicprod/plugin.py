@@ -30,10 +30,9 @@ Not done yet (the gap list for the spike): the read side as statements
 writes through ``save(update_fields=...)`` helpers that take the field name as
 data.
 
-Scope: only ``pcs/`` and ``swf_epicprod/`` are read (:data:`PACKAGES`);
-``scripts/``, ``tools/``, ``pilot/``, migrations and tests are not.  So the
-boundaries found are not all of swf-epicprod's PanDA use: task submission
-(``Client.insertTaskParams``) appears under ``tools/`` and is not in the map.
+Scope: ``pcs/``, ``swf_epicprod/`` and ``tools/`` are read (:data:`PACKAGES`);
+``scripts/``, ``pilot/``, migrations and tests are not, so PanDA use from
+those is not in the map.
 """
 
 from __future__ import annotations
@@ -62,7 +61,7 @@ logger = logging.getLogger(__name__)
 MAP_ID = "swf-epicprod"
 
 #: Top-level packages analysed, in the order they are walked.
-PACKAGES = ("pcs", "swf_epicprod")
+PACKAGES = ("pcs", "swf_epicprod", "tools")
 
 _SINGLE_OBJECT = {
     "get",
