@@ -29,11 +29,14 @@ def register_code_map_plugin(map_id: str, plugin_class: type[CodeMapPlugin]) -> 
 
 
 def _register_builtins() -> None:
-    if "panda" in _plugins:
-        return
-    from bamboo.codemap.panda.plugin import PandaCodeMapPlugin
+    if "panda" not in _plugins:
+        from bamboo.codemap.panda.plugin import PandaCodeMapPlugin
 
-    register_code_map_plugin("panda", PandaCodeMapPlugin)
+        register_code_map_plugin("panda", PandaCodeMapPlugin)
+    if "swf-epicprod" not in _plugins:
+        from bamboo.codemap.epicprod.plugin import EpicprodCodeMapPlugin
+
+        register_code_map_plugin("swf-epicprod", EpicprodCodeMapPlugin)
 
 
 def get_code_map_plugin(map_id: str = "panda") -> CodeMapPlugin:
