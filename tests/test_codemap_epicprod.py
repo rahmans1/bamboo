@@ -128,7 +128,9 @@ def test_subject_carries_declared_vocabulary(fragment_and_plugin):
 
 def test_bound_object_writes_are_certain_with_path_conditions(fragment_and_plugin):
     fragment, _ = fragment_and_plugin
-    junction = next(j for j in fragment.junctions if j.owner == "pcs.services::submit")
+    junction = next(
+        j for j in fragment.junctions if j.owner == "pcs/services.py::submit"
+    )
     assert [(b.outcome, b.tier) for b in junction.branches] == [
         ("submitted", 1),
         ("draft", 1),
