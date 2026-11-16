@@ -13,9 +13,10 @@ plugin adds what is specific to swf-epicprod:
   ``PANDA_URL``) as outbound boundaries, so a PanDA map can bind to them
   instead of a link being invented.
 
-Values are read inside ``sql.across_calls`` over the whole corpus, so a
-constant another module declares (``PROPAGATION_STATES`` imported from
-``pcs.models``) settles the way a local one does.
+Values are read with the whole corpus's calls handed to the shared resolver,
+so a constant another module declares (``PROPAGATION_STATES`` imported from
+``pcs.models``) settles the way a local one does.  No module of the PanDA
+plugin is loaded.
 
 Not done yet: the read side as statements (``ReadSiteNode``), log sites,
 reach graph and entry points, and writes through ``save(update_fields=...)``
@@ -34,6 +35,7 @@ import re
 from pathlib import Path
 from typing import Iterator, Optional
 
+from bamboo.codemap import pathcond
 from bamboo.codemap.base import CodeMapPlugin
 from bamboo.codemap.calls import Calls, Types
 from bamboo.codemap.gitsource import blob_sha, describe
@@ -42,7 +44,6 @@ from bamboo.codemap.orm.assemble import FieldWrite, assemble, write_condition
 from bamboo.codemap.orm.resolve import Resolved, resolve, settler
 from bamboo.codemap.orm.schema import DjangoModel, dotted, module_constants, read_models
 from bamboo.codemap.orm.writes import scan_function
-from bamboo.codemap.panda import pathcond, sql
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,7 @@ class EpicprodCodeMapPlugin(CodeMapPlugin):
         self.selected: dict[tuple[str, str], set[str]] = {}
         self.boundaries: dict[str, BoundaryNode] = {}
         self.unresolved_writes = 0
+        self._calls: Optional[Calls] = None
 
     @property
     def map_id(self) -> str:
@@ -141,7 +143,7 @@ class EpicprodCodeMapPlugin(CodeMapPlugin):
         panda_aliases: set[str],
     ) -> None:
         owner = f"{rel}::{qual}"
-        settle = settler(self.models, constants)
+        settle = settler(self.models, constants, self._calls)
         scan = scan_function(func, cls, self.models, constants)
         for key, vals in scan.selected.items():
             self.selected.setdefault(key, set()).update(vals)
@@ -288,33 +290,33 @@ class EpicprodCodeMapPlugin(CodeMapPlugin):
             Types(roots, {rel: (shas[rel], tree) for rel, _m, tree, _t in parsed})
         )
 
-        with sql.across_calls(calls):
-            for rel, _module, tree, _text in parsed:
-                constants = module_constants(tree)
-                panda_aliases: set[str] = set()
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.Import):
-                        for a in node.names:
-                            if a.name.startswith("pandaclient"):
-                                panda_aliases.add(a.asname or a.name.split(".")[0])
-                    elif isinstance(node, ast.ImportFrom) and (
-                        node.module or ""
-                    ).startswith("pandaclient"):
-                        panda_aliases.update(a.asname or a.name for a in node.names)
+        self._calls = calls
+        for rel, _module, tree, _text in parsed:
+            constants = module_constants(tree)
+            panda_aliases: set[str] = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for a in node.names:
+                        if a.name.startswith("pandaclient"):
+                            panda_aliases.add(a.asname or a.name.split(".")[0])
+                elif isinstance(node, ast.ImportFrom) and (
+                    node.module or ""
+                ).startswith("pandaclient"):
+                    panda_aliases.update(a.asname or a.name for a in node.names)
 
-                def functions(body, prefix: str, cls: Optional[str]):
-                    for stmt in body:
-                        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                            qual = f"{prefix}{stmt.name}"
-                            yield stmt, qual, cls
-                            yield from functions(stmt.body, f"{qual}.", cls)
-                        elif isinstance(stmt, ast.ClassDef):
-                            yield from functions(
-                                stmt.body, f"{prefix}{stmt.name}.", stmt.name
-                            )
+            def functions(body, prefix: str, cls: Optional[str]):
+                for stmt in body:
+                    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        qual = f"{prefix}{stmt.name}"
+                        yield stmt, qual, cls
+                        yield from functions(stmt.body, f"{qual}.", cls)
+                    elif isinstance(stmt, ast.ClassDef):
+                        yield from functions(
+                            stmt.body, f"{prefix}{stmt.name}.", stmt.name
+                        )
 
-                for func, qual, cls in functions(tree.body, "", None):
-                    self._scan_function(func, qual, cls, rel, constants, panda_aliases)
+            for func, qual, cls in functions(tree.body, "", None):
+                self._scan_function(func, qual, cls, rel, constants, panda_aliases)
 
         subjects, entities, junctions, self.unresolved_writes = assemble(
             self.writes, self.models, MAP_ID, self._stamp, shas, self.selected
